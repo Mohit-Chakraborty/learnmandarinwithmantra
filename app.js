@@ -352,10 +352,23 @@
     const d = new Date(); const seed = d.getFullYear() * 372 + d.getMonth() * 31 + d.getDate();
     return all[(seed * 7) % all.length];
   }
+  // A phrase from the learner's level, changing at local midnight.
+  function phraseOfDay() {
+    const list = D.phrases[S.level];
+    const d = new Date();
+    const day = Math.round(new Date(d.getFullYear(), d.getMonth(), d.getDate()) / 864e5);
+    const it = list[(day * 5) % list.length];
+    return { hz: it.hz, py: it.py, en: it.en, short: it.en, note: it.note, ph: true };
+  }
+  const potdSaveBtn = (p) => {
+    const on = isSaved(p);
+    return `<button class="lk-save ${on ? "on" : ""}" id="potdSave" aria-pressed="${on}">${on ? "★ Saved" : "☆ Save"}</button>`;
+  };
 
   function renderHome() {
     const lv = levelOf(S.level);
     const w = wordOfDay();
+    const ph = phraseOfDay();
     app.innerHTML = `
     <section class="hero">
       <div class="hero-text">
@@ -450,6 +463,17 @@
           </div>
         </div>
       </article>
+      <article class="panel potd">
+        <p class="eyebrow">Phrase of the day · ${lv.name}</p>
+        <div class="potd-hz">${esc(ph.hz)}</div>
+        <div class="wotd-py">${esc(ph.py)} ${speakBtn(ph.hz)}</div>
+        <div class="wotd-en">${esc(ph.en)}</div>
+        ${ph.note ? `<p class="wotd-note">${esc(ph.note)}</p>` : ""}
+        <div class="potd-ctl" id="potdCtl">${potdSaveBtn(ph)}</div>
+      </article>
+    </section>
+
+    <section class="block">
       <article class="panel journey">
         <p class="eyebrow">Your journey</p>
         <div class="journey-grid">
@@ -477,6 +501,12 @@
     app.querySelectorAll("[data-level]").forEach((b) => b.addEventListener("click", () => {
       S.level = b.dataset.level; save(); renderHome();
     }));
+    $("#potdCtl").addEventListener("click", (e) => {
+      if (!e.target.closest("#potdSave")) return;
+      toggleSave(ph);
+      $("#potdCtl").innerHTML = potdSaveBtn(ph);
+      toast(isSaved(ph) ? "Saved to My words." : "Removed from My words.");
+    });
     const hl = $("#homeLookupInput");
     hl.addEventListener("focus", () => { loadDict().catch(() => {}); }, { once: true });
     $("#homeLookup").addEventListener("submit", (e) => {
