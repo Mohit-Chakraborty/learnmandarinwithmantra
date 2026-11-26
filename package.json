@@ -1,0 +1,23 @@
+{
+  "name": "learnmandarinwithmantra",
+  "version": "1.0.0",
+  "description": "A static website for learning and practicing Mandarin from zero: characters, words, phrases, numbers and tones, at three levels (Beginner, Early learner, Expert). It has no build step.",
+  "main": "app.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Mohit-Chakraborty/learnmandarinwithmantra.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/Mohit-Chakraborty/learnmandarinwithmantra/issues"
+  },
+  "homepage": "https://github.com/Mohit-Chakraborty/learnmandarinwithmantra#readme",
+  "dependencies": {
+    "@vercel/analytics": "^2.0.1"
+  }
+}
