@@ -17,6 +17,8 @@
   ];
   // Categories whose progress is a best score rather than a count of mastered items.
   const SCORED = ["numbers", "tones"];
+  // Words the learner saved from the lookup page. Not shown as a home card.
+  const MYCAT = { id: "mywords", name: "My words", zh: "我的", py: "wǒ de" };
   const RANKS = [
     [0, "新手", "Newcomer"], [100, "学生", "Student"], [300, "学者", "Scholar"],
     [700, "高手", "Adept"], [1500, "大师", "Master"], [3000, "龙", "Dragon"]
@@ -27,7 +29,7 @@
 
   /* ---------- Storage ---------- */
   const KEY = "xiaobu-progress-v1";
-  const defaults = { level: "beginner", xp: 0, streak: 0, lastDay: null, mastery: {}, best: {}, answered: 0, correct: 0 };
+  const defaults = { level: "beginner", xp: 0, streak: 0, lastDay: null, mastery: {}, best: {}, answered: 0, correct: 0, saved: [] };
   function load() {
     try { return Object.assign({}, defaults, JSON.parse(localStorage.getItem(KEY) || "{}")); }
     catch (e) { return Object.assign({}, defaults); }
@@ -52,7 +54,13 @@
   const shuffle = (a) => { a = a.slice(); for (let i = a.length - 1; i > 0; i--) { const j = rand(i + 1); [a[i], a[j]] = [a[j], a[i]]; } return a; };
   const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
   const levelOf = (id) => LEVELS.find((l) => l.id === id);
-  const catOf = (id) => CATS.find((c) => c.id === id);
+  const catOf = (id) => CATS.find((c) => c.id === id) || (id === MYCAT.id ? MYCAT : undefined);
+  // Size class for big characters. Saved words vary in length, so size them by character count.
+  const sz = (cat, hz) => {
+    if (cat !== MYCAT.id) return cat;
+    const n = [...hz].length;
+    return n <= 1 ? "characters" : n <= 3 ? "words" : "phrases";
+  };
   const mkey = (cat, hz) => cat + ":" + hz;
 
   function rank(xp) {
@@ -88,7 +96,7 @@
   }
   // Phrases have punctuation and joined words, so they are shown uncolored.
   const pyHtml = (cat, py) => cat === "phrases" ? esc(py) : colorPy(py);
-  const hzHtml = (cat, it) => cat === "phrases" ? esc(it.hz) : colorHz(it.hz, it.py);
+  const hzHtml = (cat, it) => cat === "phrases" || it.ph ? esc(it.hz) : colorHz(it.hz, it.py);
 
   /* ---------- Numbers ---------- */
   const DIG = "零一二三四五六七八九";
@@ -183,13 +191,17 @@
   /* ---------- Writing practice (stroke order) ---------- */
   const penSvg = `<svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true"><path fill="currentColor" d="M3 17.25V21h3.75L17.81 9.94l-3.75-3.75L3 17.25zM20.71 7.04a1 1 0 0 0 0-1.41l-2.34-2.34a1 1 0 0 0-1.41 0l-1.83 1.83 3.75 3.75 1.83-1.83z"/></svg>`;
   const writeBtn = (hz) => `<button class="speak write" data-write="${esc(hz)}" aria-label="Practice writing ${esc(hz)}" title="Practice writing">${penSvg}</button>`;
-  const canWrite = (cat) => cat === "characters" || cat === "words" || cat === "tones";
+  const canWrite = (cat) => cat === "characters" || cat === "words" || cat === "tones" || cat === MYCAT.id;
+  const HAN = /[\u3400-\u9fff]/;
   function findItem(hz) {
     for (const cat of ["characters", "words"]) for (const l of LEVELS) {
       const it = D[cat][l.id].find((x) => x.hz === hz);
       if (it) return it;
     }
-    return null;
+    const saved = S.saved.find((x) => x.hz === hz);
+    if (saved) return saved;
+    const e = dict && dict.find((x) => x.hz === hz);
+    return e ? { hz: e.hz, py: e.py, en: e.short } : null;
   }
   let writer = null, writerChars = [], writerIdx = 0, writerReturn = null;
   const writerOpen = () => $("#writer").classList.contains("show");
@@ -197,14 +209,15 @@
 
   function openWriter(hz) {
     const it = findItem(hz) || { hz, py: "", en: "" };
-    writerChars = [...it.hz];
+    writerChars = [...it.hz].filter((c) => HAN.test(c));
+    if (!writerChars.length) return;
     writerReturn = document.activeElement;
     const box = $("#writer");
     box.innerHTML = `
       <div class="w-card" role="dialog" aria-modal="true" aria-labelledby="wTitle">
         <button class="w-x" id="wClose" aria-label="Close">✕</button>
         <p class="eyebrow" id="wTitle">Write it · 写</p>
-        <div class="w-word">${it.py ? colorHz(it.hz, it.py) : esc(it.hz)}<span class="w-mean">${esc(it.py)}${it.en ? " · " + esc(it.en) : ""}</span></div>
+        <div class="w-word">${it.py && !it.ph ? colorHz(it.hz, it.py) : esc(it.hz)}<span class="w-mean">${esc(it.py)}${it.en ? " · " + esc(it.en) : ""}</span></div>
         ${writerChars.length > 1 ? `<div class="w-tabs">${writerChars.map((c, k) => `<button class="w-tab" data-wi="${k}" aria-label="Character ${k + 1}: ${esc(c)}">${esc(c)}</button>`).join("")}</div>` : ""}
         <div class="w-pad" id="wPad">
           <svg class="w-grid" viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true"><path d="M0 0L100 100M100 0L0 100M50 0V100M0 50H100"/></svg>
@@ -245,9 +258,12 @@
       strokeColor: cssVar("--ink"), outlineColor: cssVar("--line"),
       drawingColor: cssVar("--red"), highlightColor: cssVar("--jade"),
       strokeAnimationSpeed: 1, delayBetweenStrokes: 250,
+      // Lesson characters are bundled with the site; anything else (e.g. from the lookup page)
+      // comes from the same data set on the jsDelivr CDN.
       charDataLoader: (c, onLoad, onError) => {
-        fetch("strokes/" + encodeURIComponent(c) + ".json")
-          .then((r) => { if (!r.ok) throw new Error("HTTP " + r.status); return r.json(); })
+        const get = (url) => fetch(url).then((r) => { if (!r.ok) throw new Error("HTTP " + r.status); return r.json(); });
+        get("strokes/" + encodeURIComponent(c) + ".json")
+          .catch(() => get("https://cdn.jsdelivr.net/npm/hanzi-writer-data@2.0.1/" + encodeURIComponent(c) + ".json"))
           .then(onLoad).catch(onError);
       },
       onLoadCharDataSuccess: (data) => {
@@ -304,6 +320,7 @@
   function pool(cat, level) {
     if (cat === "numbers") return D.numberStudy[level].map(numItem);
     if (cat === "tones") return tonePool(level);
+    if (cat === MYCAT.id) return S.saved;
     return D[cat][level];
   }
   function masteredCount(cat, level) {
@@ -408,6 +425,19 @@
       </div>
     </section>
 
+    <section class="block">
+      <form class="panel lk-teaser" id="homeLookup" role="search">
+        <div class="lk-teaser-text">
+          <h2><label for="homeLookupInput">How do you say…?</label></h2>
+          <p>Type any English word to see it in Mandarin, hear it and practice writing it.${S.saved.length ? ` You have <a href="#/lookup">${S.saved.length} saved word${S.saved.length === 1 ? "" : "s"}</a>.` : ""}</p>
+        </div>
+        <div class="lk-row">
+          <input id="homeLookupInput" type="search" placeholder="e.g. water, friend, thank you" autocomplete="off" autocapitalize="off" spellcheck="false">
+          <button class="btn primary" type="submit">Look up</button>
+        </div>
+      </form>
+    </section>
+
     <section class="block split">
       <article class="panel wotd">
         <p class="eyebrow">Word of the day</p>
@@ -447,6 +477,12 @@
     app.querySelectorAll("[data-level]").forEach((b) => b.addEventListener("click", () => {
       S.level = b.dataset.level; save(); renderHome();
     }));
+    const hl = $("#homeLookupInput");
+    hl.addEventListener("focus", () => { loadDict().catch(() => {}); }, { once: true });
+    $("#homeLookup").addEventListener("submit", (e) => {
+      e.preventDefault();
+      location.hash = "#/lookup/" + encodeURIComponent(hl.value.trim());
+    });
   }
 
   /* ---------- Tones page ---------- */
@@ -503,11 +539,11 @@
       <div class="counter"><span>${i + 1}</span> / ${items.length}</div>
       <div class="flip ${flipped ? "flipped" : ""}" id="card" tabindex="0" role="button" aria-label="Flip card">
         <div class="face front">
-          ${isNum ? `<div class="num-big">${it.en}</div>` : `<div class="card-hz ${cat}">${esc(it.hz)}</div>`}
+          ${isNum ? `<div class="num-big">${it.en}</div>` : `<div class="card-hz ${sz(cat, it.hz)}">${esc(it.hz)}</div>`}
           <div class="hint">tap to reveal</div>
         </div>
         <div class="face rear">
-          <div class="card-hz small ${cat}">${hzHtml(cat, it)}</div>
+          <div class="card-hz small ${sz(cat, it.hz)}">${hzHtml(cat, it)}</div>
           <div class="card-py">${pyHtml(cat, it.py)}</div>
           <div class="card-en">${isNum ? it.en : esc(it.en)}</div>
           ${it.note ? `<p class="card-note">${esc(it.note)}</p>` : ""}
@@ -531,7 +567,7 @@
       <div class="block-head"><h2>All cards</h2></div>
       <div class="mini-grid">
         ${items.map((x, k) => `<button class="mini ${k === i ? "on" : ""}" data-go="${k}">
-          <span class="mini-hz ${cat}">${isNum ? x.en : hzHtml(cat, x)}</span>
+          <span class="mini-hz ${sz(cat, x.hz)}">${isNum ? x.en : hzHtml(cat, x)}</span>
           <span class="mini-en">${isNum ? esc(x.hz) : esc(x.en)}</span></button>`).join("")}
       </div>
     </section>`;
@@ -578,8 +614,11 @@
   }
 
   function buildVocabQuestion(cat, level, item) {
-    const own = D[cat][level];
-    const wide = own.concat(...LEVELS.filter((l) => l.id !== level).map((l) => D[cat][l.id]));
+    const mine = cat === MYCAT.id;
+    const own = mine ? S.saved : D[cat][level];
+    const wide = mine
+      ? own.concat(D.words.beginner, D.words.early, D.characters.beginner)
+      : own.concat(...LEVELS.filter((l) => l.id !== level).map((l) => D[cat][l.id]));
     const types = level === "beginner" ? ["meaning", "meaning", "reverse"]
       : level === "early" ? ["meaning", "reverse", "pinyin"]
       : ["meaning", "reverse", "pinyin", "listen"];
@@ -591,21 +630,21 @@
     const q = { cat, item, kind, say: item.hz };
     if (kind === "meaning") {
       q.prompt = "What does this mean?";
-      q.big = `<div class="q-hz ${cat}">${esc(item.hz)}</div>${showPy ? `<div class="q-py">${pyHtml(cat, item.py)}</div>` : ""}`;
+      q.big = `<div class="q-hz ${sz(cat, item.hz)}">${esc(item.hz)}</div>${showPy ? `<div class="q-py">${pyHtml(cat, item.py)}</div>` : ""}`;
       q.options = opts.map((o) => ({ html: esc(o.en), correct: o === item }));
     } else if (kind === "reverse") {
       q.prompt = "Which one means…";
       q.big = `<div class="q-en">“${esc(item.en)}”</div>`;
-      q.options = opts.map((o) => ({ html: `<span class="opt-hz ${cat}">${esc(o.hz)}</span>${showPy ? `<span class="opt-sub">${esc(o.py)}</span>` : ""}`, correct: o === item }));
+      q.options = opts.map((o) => ({ html: `<span class="opt-hz ${sz(cat, o.hz)}">${esc(o.hz)}</span>${showPy ? `<span class="opt-sub">${esc(o.py)}</span>` : ""}`, correct: o === item }));
     } else if (kind === "pinyin") {
       q.prompt = "How is this pronounced?";
-      q.big = `<div class="q-hz ${cat}">${esc(item.hz)}</div>`;
+      q.big = `<div class="q-hz ${sz(cat, item.hz)}">${esc(item.hz)}</div>`;
       q.options = opts.map((o) => ({ html: `<span class="opt-py">${esc(o.py)}</span>`, correct: o === item }));
     } else {
       q.prompt = "Listen. Which one did you hear?";
       q.big = `<button class="listen-big" data-say="${esc(item.hz)}">${speakerSvg}<span>Play again</span></button>`;
       q.autoplay = true;
-      q.options = opts.map((o) => ({ html: `<span class="opt-hz ${cat}">${esc(o.hz)}</span>`, correct: o === item }));
+      q.options = opts.map((o) => ({ html: `<span class="opt-hz ${sz(cat, o.hz)}">${esc(o.hz)}</span>`, correct: o === item }));
     }
     return q;
   }
@@ -633,6 +672,229 @@
       q.options = opts.map((o) => ({ html: `<span class="opt-num">${o.en}</span>`, correct: o.n === n }));
     }
     return q;
+  }
+
+  /* ---------- Look up (English, pinyin or characters → Mandarin) ---------- */
+  // lookupMain: matches for the whole query; lookupBreakdown: one match per word of a phrase.
+  // lookupResults is both lists together, indexed by the Save buttons.
+  let dict = null, dictLoading = null, lookupMain = [], lookupBreakdown = [], lookupResults = [], lookupTimer = null;
+  const STOP = new Set(["a", "an", "the", "to", "of", "is", "are", "am", "be", "was", "were", "and", "it", "do", "does"]);
+  const RARE = /^\((archaic|old|literary|classical|dialect|obsolete|Taiwan|Tw|Cantonese|loanword|slang)\b/i;
+  const clean = (s) => s.toLowerCase().replace(/[^a-z0-9'\s]/g, " ").replace(/\s+/g, " ").trim();
+  const coreOf = (s) => clean(s.replace(/\([^)]*\)|\[[^\]]*\]/g, " ")).replace(/^(to|a|an|the) /, "");
+  const toneless = (s) => plainSyl(s.toLowerCase()).replace(/[üv]/g, "u").replace(/[^a-z]/g, "");
+  const markedKey = (s) => s.toLowerCase().replace(/[^a-zāáǎàēéěèīíǐìōóǒòūúǔùǖǘǚǜü]/g, "");
+  const shorten = (s, n) => s.length > n ? s.slice(0, n - 1).replace(/[;,\s]+\S*$/, "") + "…" : s;
+
+  function makeEntry(hz, py, meanings, freq, hsk, lesson, note, ph) {
+    // A label like "(archaic)" marks its own senses as rare, and the whole reading as uncommon.
+    const oddForm = meanings.some((m) => RARE.test(m));
+    const parts = meanings.flatMap((m) => { const r = RARE.test(m); return m.split(/;\s*/).filter(Boolean).map((x) => [x, r || RARE.test(x)]); });
+    const senses = parts.map(([x]) => x);
+    return {
+      hz, py, freq, hsk, lesson, note, ph,
+      en: meanings.slice(0, 3).join("; "),
+      short: shorten(senses[0] || "", 48),
+      senses: parts.map(([x, rare]) => ({ full: clean(x), core: coreOf(x), rare, odd: oddForm })),
+      pyKey: toneless(py), pyMark: markedKey(py)
+    };
+  }
+  function buildIndex(rows) {
+    const out = [], lessonByKey = new Map();
+    for (const cat of ["phrases", "words", "characters"]) for (const l of LEVELS) for (const it of D[cat][l.id]) {
+      const e = makeEntry(it.hz, it.py, [it.en], 50000, 0, true, it.note, cat === "phrases");
+      e.short = it.en;
+      lessonByKey.set(it.hz + "|" + e.pyMark, e);
+      out.push(e);
+    }
+    for (const [hz, py, ms, freq, hsk] of rows) {
+      const lesson = lessonByKey.get(hz + "|" + markedKey(py));
+      if (lesson) {
+        // Same word as a lesson item: keep the lesson's wording, but let its dictionary senses match too.
+        lesson.freq = freq; lesson.hsk = hsk;
+        lesson.senses.push(...makeEntry(hz, py, ms, freq, hsk).senses.map((x) => ({ ...x, extra: true })));
+        continue;
+      }
+      out.push(makeEntry(hz, py, ms, freq, hsk, false));
+    }
+    return out;
+  }
+  function loadDict() {
+    if (dict) return Promise.resolve(dict);
+    if (!dictLoading) {
+      dictLoading = fetch("dict/hsk.json")
+        .then((r) => { if (!r.ok) throw new Error("HTTP " + r.status); return r.json(); })
+        .then((rows) => (dict = buildIndex(rows)))
+        .catch((e) => { dictLoading = null; throw e; });
+    }
+    return dictLoading;
+  }
+
+  function searchDict(raw, limit = 15) {
+    const q = raw.trim();
+    if (!q) return [];
+    const scored = [];
+    if (/[㐀-鿿]/.test(q)) {
+      const h = q.replace(/[^㐀-鿿]/g, "");
+      for (const e of dict) {
+        const s = e.hz === h ? 100 : e.hz.replace(/[^㐀-鿿]/g, "") === h ? 95 : e.hz.startsWith(h) ? 70 : e.hz.includes(h) ? 50 : 0;
+        if (s) scored.push([s + (e.lesson ? 12 : 0), e]);
+      }
+    } else {
+      const marked = /[āáǎàēéěèīíǐìōóǒòūúǔùǖǘǚǜ]/i.test(q) ? markedKey(q) : null;
+      const en = marked ? "" : clean(q), core = en.replace(/^(to|a|an|the) /, "");
+      const sing = core.length > 3 && /[^s]s$/.test(core) ? core.replace(/(ies)$/, "y").replace(/(ches|shes|xes|ses)$/, (m) => m.slice(0, -2)).replace(/([^s])s$/, "$1") : null;
+      const pk = toneless(q);
+      if (!core && !pk) return [];
+      for (const e of dict) {
+        let s = 0;
+        // Pinyin: exact with tone marks beats everything; toneless pinyin ranks below English matches.
+        if (marked && e.pyMark === marked) s = 100;
+        else if (!marked && pk.length > 1 && e.pyKey === pk) s = 50;
+        if (core) for (let k = 0; k < e.senses.length; k++) {
+          const x = e.senses[k];
+          let t = 0;
+          if (x.core === core) t = 100;
+          else if (x.full === en) t = 95;
+          else if (sing && x.core === sing) t = 90;
+          else if (x.core.startsWith(core + " ")) t = 60;
+          else if ((" " + x.full + " ").includes(" " + core + " ")) t = 40;
+          // Dictionaries list a word's main meaning first.
+          if (t >= 90) t += k === 0 ? 6 : k < 3 ? 2 : 0;
+          if (t && x.extra) t -= 14; // cancels the lesson bonus below
+          if (t && x.rare) t -= 30;
+          else if (t && x.odd) t -= 15;
+          if (t > s) s = t;
+        }
+        if (s) scored.push([s + (e.lesson ? 12 : 0) + (e.hsk && e.hsk <= 3 ? 4 : 0), e]);
+      }
+    }
+    scored.sort((a, b) => b[0] - a[0] || a[1].freq - b[1].freq);
+    return scored.slice(0, limit).map(([score, entry]) => ({ score, entry }));
+  }
+
+  const savedKey = (x) => x.hz + "|" + markedKey(x.py);
+  const isSaved = (e) => S.saved.some((x) => savedKey(x) === savedKey(e));
+  function toggleSave(e) {
+    const k = savedKey(e);
+    if (isSaved(e)) S.saved = S.saved.filter((x) => savedKey(x) !== k);
+    else S.saved.unshift({ hz: e.hz, py: e.py, en: e.short, ...(e.note ? { note: e.note } : {}), ...(e.ph ? { ph: true } : {}) });
+    save();
+  }
+
+  function resultCard(e, i) {
+    const saved = isSaved(e);
+    const hzH = e.ph ? esc(e.hz) : colorHz(e.hz, e.py);
+    const pyH = e.ph ? esc(e.py) : colorPy(e.py);
+    const writable = !e.ph && HAN.test(e.hz);
+    return `<article class="lk-item">
+      <div class="lk-hz ${sz(MYCAT.id, e.hz)}">${hzH}</div>
+      <div class="lk-body">
+        <div class="lk-py">${pyH} ${speakBtn(e.hz)}${writable ? writeBtn(e.hz) : ""}</div>
+        <div class="lk-en">${esc(e.en)}</div>
+        <div class="lk-tags">${e.lesson ? `<span class="tag lesson">In your lessons</span>` : ""}${e.hsk ? `<span class="tag">HSK ${e.hsk === 7 ? "7–9" : e.hsk}</span>` : ""}</div>
+      </div>
+      <button class="lk-save ${saved ? "on" : ""}" data-save="${i}" aria-pressed="${saved}">${saved ? "★ Saved" : "☆ Save"}</button>
+    </article>`;
+  }
+
+  function myWordsPanel() {
+    const n = S.saved.length;
+    return `<p class="eyebrow">My words · ${n}</p>
+      ${n ? `<div class="mw-list">${S.saved.map((x, i) => `<span class="mw-chip"><button class="mw-word" data-mwsay="${i}" title="Hear it"><b>${esc(x.hz)}</b> ${esc(x.py)}</button><button class="mw-x" data-unsave="${i}" aria-label="Remove ${esc(x.hz)}">✕</button></span>`).join("")}</div>`
+        : `<p class="mw-empty">Tap <b>☆ Save</b> on any result to collect words here, then study them as flashcards or practice them in a quiz.</p>`}
+      <div class="mw-ctl">
+        ${n ? `<a class="btn soft" href="#/learn/mywords">Study cards</a>` : ""}
+        ${n >= 4 ? `<a class="btn primary" href="#/quiz/mywords">Practice my words</a>` : n ? `<p class="mw-hint">Save ${4 - n} more to start a practice round.</p>` : ""}
+      </div>`;
+  }
+
+  const SUGGEST = ["hello", "thank you", "water", "eat", "friend", "happy", "cat", "beautiful", "ni hao", "爱"];
+
+  function renderLookup(q0) {
+    app.innerHTML = `
+    <section class="page-head">
+      <a class="back" href="#/">← Home</a>
+      <h1>Look up a word <span class="zh-sub">查</span></h1>
+      <p class="lede">Type an English word to see it in Mandarin. You can also type pinyin (<i>ni hao</i>) or characters (你好). Save words to study and practice them later.</p>
+    </section>
+    <div class="lk-layout">
+      <div>
+        <div class="lk-search" role="search">
+          <svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true"><path fill="currentColor" d="M15.5 14h-.79l-.28-.27A6.47 6.47 0 0 0 16 9.5 6.5 6.5 0 1 0 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19l-4.99-5zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14z"/></svg>
+          <input id="lkInput" type="search" aria-label="Word to look up" placeholder="e.g. water, friend, thank you" autocomplete="off" autocapitalize="off" spellcheck="false">
+        </div>
+        <div id="lkResults" class="lk-results" aria-live="polite"></div>
+      </div>
+      <aside class="panel mywords" id="myWords">${myWordsPanel()}</aside>
+    </div>
+    <p class="lk-credit">Dictionary: ${(12000).toLocaleString("en-US")}+ words from the HSK exam vocabulary, with meanings from <a href="https://cc-cedict.org/wiki/" target="_blank" rel="noopener">CC-CEDICT</a> (CC BY-SA 4.0), via <a href="https://github.com/drkameleon/complete-hsk-vocabulary" target="_blank" rel="noopener">complete-hsk-vocabulary</a>.</p>`;
+
+    const input = $("#lkInput");
+    input.value = q0;
+    input.addEventListener("input", () => {
+      clearTimeout(lookupTimer);
+      lookupTimer = setTimeout(runLookup, 120);
+    });
+    $("#lkResults").addEventListener("click", (e) => {
+      const b = e.target.closest("[data-save]");
+      if (b) { toggleSave(lookupResults[+b.dataset.save]); drawLookupResults(); refreshMyWords(); return; }
+      const sug = e.target.closest("[data-suggest]");
+      if (sug) { input.value = sug.dataset.suggest; runLookup(); input.focus(); }
+    });
+    $("#myWords").addEventListener("click", (e) => {
+      const x = e.target.closest("[data-unsave]");
+      if (x) { S.saved.splice(+x.dataset.unsave, 1); save(); refreshMyWords(); drawLookupResults(); return; }
+      const w = e.target.closest("[data-mwsay]");
+      if (w) tts.say(S.saved[+w.dataset.mwsay].hz);
+    });
+    if (window.matchMedia("(hover: hover)").matches) input.focus();
+    if (!dict) $("#lkResults").innerHTML = `<p class="lk-empty">Loading the dictionary…</p>`;
+    loadDict().then(runLookup).catch(() => {
+      $("#lkResults").innerHTML = `<p class="lk-empty">The dictionary couldn't load. Check your connection and try again.</p>`;
+    });
+  }
+
+  function refreshMyWords() { const m = $("#myWords"); if (m) m.innerHTML = myWordsPanel(); }
+
+  function runLookup() {
+    const input = $("#lkInput");
+    if (!input || !dict) return;
+    const q = input.value;
+    history.replaceState(null, "", "#/lookup" + (q.trim() ? "/" + encodeURIComponent(q.trim()) : ""));
+    lookupMain = searchDict(q).map((r) => r.entry);
+    lookupBreakdown = [];
+    // A phrase with no strong match: also look up its words one at a time.
+    const words = /[㐀-鿿]/.test(q) ? [] : clean(q).split(" ").filter((w) => w && !STOP.has(w));
+    const top = searchDict(q, 1)[0];
+    const pinyinHit = lookupMain.some((e) => e.pyKey === toneless(q));
+    if (words.length > 1 && !pinyinHit && (!top || top.score < 90)) {
+      for (const w of words) {
+        const hit = searchDict(w, 1)[0];
+        if (hit && hit.score >= 60) lookupBreakdown.push({ word: w, entry: hit.entry });
+      }
+    }
+    drawLookupResults();
+  }
+
+  function drawLookupResults() {
+    const box = $("#lkResults"), input = $("#lkInput");
+    if (!box || !input || !dict) return;
+    const q = input.value.trim();
+    if (!q) {
+      box.innerHTML = `<div class="lk-empty"><p>Try one of these:</p><div class="lk-sugs">${SUGGEST.map((w) => `<button class="chip lk-sug" data-suggest="${esc(w)}">${esc(w)}</button>`).join("")}</div></div>`;
+      return;
+    }
+    const offset = lookupMain.length;
+    lookupResults = lookupMain.concat(lookupBreakdown.map((b) => b.entry));
+    let html = "";
+    if (lookupBreakdown.length) {
+      html += `<div class="lk-break"><p class="eyebrow">Word by word</p><p class="lk-note">This looks up each word on its own. It can't translate whole sentences, and Chinese word order can differ.</p>
+        ${lookupBreakdown.map((b, i) => `<div class="lk-break-row"><span class="lk-break-en">${esc(b.word)}</span>${resultCard(b.entry, offset + i)}</div>`).join("")}</div>`;
+    }
+    if (lookupMain.length) html += (lookupBreakdown.length ? `<p class="eyebrow lk-sub">Closest matches for the whole phrase</p>` : "") + lookupMain.map((e, i) => resultCard(e, i)).join("");
+    if (!html) html = `<p class="lk-empty">No match for “${esc(q)}”. Try a simpler word or check the spelling.</p>`;
+    box.innerHTML = html;
   }
 
   /* ---------- Tone practice ---------- */
@@ -701,7 +963,7 @@
     } else if (cat === "tones") {
       qs = shuffle(tonePool(level)).slice(0, QUIZ_LEN).map((it) => buildToneQuestion(level, it));
     } else {
-      const items = D[cat][level]
+      const items = pool(cat, level)
         .map((it) => ({ it, w: Math.random() + (5 - (S.mastery[mkey(cat, it.hz)] || 0)) * 0.3 }))
         .sort((a, b) => b.w - a.w).slice(0, QUIZ_LEN).map((x) => x.it);
       qs = shuffle(items).map((it) => buildVocabQuestion(cat, level, it));
@@ -768,7 +1030,7 @@
     $("#fb").innerHTML = `
       <div class="fb-head"><b>${msg}</b>${ok ? `<span class="xp-pop">+${gained} XP</span>` : ""}</div>
       <div class="fb-card">
-        <div class="fb-hz ${q.cat}">${hzHtml(q.cat, it)}</div>
+        <div class="fb-hz ${sz(q.cat, it.hz)}">${hzHtml(q.cat, it)}</div>
         <div class="fb-info">
           <div class="fb-py">${pyHtml(q.cat, it.py)} ${speakBtn(it.hz)}${canWrite(q.cat) ? writeBtn(it.hz) : ""}</div>
           <div class="fb-en">${isNum ? it.en : esc(it.en)}</div>
@@ -829,7 +1091,7 @@
         <div class="block-head"><h2>Worth another look</h2><p>These tripped you up this round. Tap the speaker to hear each one.</p></div>
         <div class="review">
           ${missed.map((it) => `<div class="rev">
-            <div class="rev-hz ${cat}">${hzHtml(cat, it)}</div>
+            <div class="rev-hz ${sz(cat, it.hz)}">${hzHtml(cat, it)}</div>
             <div class="rev-info"><div class="rev-py">${pyHtml(cat, it.py)}</div><div class="rev-en">${isNum ? it.en : esc(it.en)}</div></div>
             <div class="rev-btns">${speakBtn(it.hz)}${canWrite(cat) ? writeBtn(it.hz) : ""}</div></div>`).join("")}
         </div>
@@ -887,10 +1149,21 @@
     const h = location.hash.replace(/^#\/?/, "").split("/");
     study = null;
     closeWriter();
+    const need = h[1] === MYCAT.id ? (h[0] === "quiz" ? 4 : 1) : 0;
+    if ((h[0] === "learn" || h[0] === "quiz") && S.saved.length < need) {
+      location.replace("#/lookup");
+      toast(h[0] === "quiz" ? "Save at least 4 words to practice them." : "Save some words first.");
+      return;
+    }
     if (h[0] === "learn" && h[1] === "tones") renderTones();
     else if (h[0] === "learn" && catOf(h[1])) renderLearn(h[1]);
     else if (h[0] === "quiz" && catOf(h[1])) startQuiz(h[1]);
     else if (h[0] === "tones") renderTones();
+    else if (h[0] === "lookup") {
+      let q = "";
+      try { q = decodeURIComponent(h.slice(1).join("/")); } catch (e) { /* malformed link */ }
+      renderLookup(q);
+    }
     else { quiz = null; renderHome(); }
     renderHeader();
     window.scrollTo({ top: 0 });
