@@ -203,7 +203,7 @@
     <section class="hero">
       <div class="hero-text">
         <p class="eyebrow">Mandarin in little steps · 小步 xiǎobù</p>
-        <h1>Learn Chinese one small step at a time.</h1>
+        <h1>Learn Mandarin one small step at a time.</h1>
         <p class="lede">No experience needed. Meet a character, hear how it sounds, see the picture inside it, then test yourself. Ten questions take about two minutes.</p>
         <div class="hero-cta">
           <a class="btn primary" href="#/learn/characters">Start learning</a>
