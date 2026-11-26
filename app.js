@@ -12,8 +12,11 @@
     { id: "characters", name: "Characters", zh: "字", py: "zì", blurb: "Single characters and the pictures hidden inside them." },
     { id: "words", name: "Words", zh: "词", py: "cí", blurb: "Everyday vocabulary you'll hear and use." },
     { id: "phrases", name: "Phrases", zh: "句", py: "jù", blurb: "Ready-made sentences for real conversations." },
-    { id: "numbers", name: "Numbers", zh: "数", py: "shù", blurb: "A simple, logical system for counting, prices and dates." }
+    { id: "numbers", name: "Numbers", zh: "数", py: "shù", blurb: "A simple, logical system for counting, prices and dates." },
+    { id: "tones", name: "Tones", zh: "声", py: "shēng", blurb: "Train your ear to tell mā, má, mǎ and mà apart." }
   ];
+  // Categories whose progress is a best score rather than a count of mastered items.
+  const SCORED = ["numbers", "tones"];
   const RANKS = [
     [0, "新手", "Newcomer"], [100, "学生", "Student"], [300, "学者", "Scholar"],
     [700, "高手", "Adept"], [1500, "大师", "Master"], [3000, "龙", "Dragon"]
@@ -66,6 +69,22 @@
     const syl = py.split(" "), chars = [...hz];
     if (syl.length !== chars.length) return esc(hz);
     return chars.map((c, i) => `<span class="t${toneOf(syl[i])}">${esc(c)}</span>`).join("");
+  }
+  const TONE_NAMES = { 1: "1st", 2: "2nd", 3: "3rd", 4: "4th", 5: "neutral" };
+  const MARK_CODES = { 1: "̄", 2: "́", 3: "̌", 4: "̀" };
+  const plainSyl = (s) => s.normalize("NFD").replace(/[̀́̄̌]/g, "").normalize("NFC");
+  const plainPy = (py) => py.split(" ").map(plainSyl).join(" ");
+  const tonesOf = (py) => py.split(" ").map(toneOf);
+  // Put a tone mark on a toneless syllable, following the standard pinyin placement rules.
+  function withTone(base, t) {
+    if (!MARK_CODES[t]) return base;
+    const low = base.toLowerCase();
+    let i = low.indexOf("a");
+    if (i < 0) i = low.indexOf("e");
+    if (i < 0 && low.includes("ou")) i = low.indexOf("o");
+    if (i < 0) for (let k = low.length - 1; k >= 0; k--) if ("aeiouü".includes(low[k])) { i = k; break; }
+    if (i < 0) return base;
+    return (base.slice(0, i + 1) + MARK_CODES[t] + base.slice(i + 1)).normalize("NFC");
   }
   // Phrases have punctuation and joined words, so they are shown uncoloured.
   const pyHtml = (cat, py) => cat === "phrases" ? esc(py) : colorPy(py);
@@ -161,9 +180,130 @@
   const speakerSvg = `<svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true"><path fill="currentColor" d="M3 9v6h4l5 5V4L7 9H3zm13.5 3A4.5 4.5 0 0 0 14 8v8a4.5 4.5 0 0 0 2.5-4zM14 3.2v2.1a7 7 0 0 1 0 13.4v2.1a9 9 0 0 0 0-17.6z"/></svg>`;
   const speakBtn = (text, label = "Listen") => `<button class="speak" data-say="${esc(text)}" aria-label="${label}" title="${label}">${speakerSvg}</button>`;
 
+  /* ---------- Writing practice (stroke order) ---------- */
+  const penSvg = `<svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true"><path fill="currentColor" d="M3 17.25V21h3.75L17.81 9.94l-3.75-3.75L3 17.25zM20.71 7.04a1 1 0 0 0 0-1.41l-2.34-2.34a1 1 0 0 0-1.41 0l-1.83 1.83 3.75 3.75 1.83-1.83z"/></svg>`;
+  const writeBtn = (hz) => `<button class="speak write" data-write="${esc(hz)}" aria-label="Practise writing ${esc(hz)}" title="Practise writing">${penSvg}</button>`;
+  const canWrite = (cat) => cat === "characters" || cat === "words" || cat === "tones";
+  function findItem(hz) {
+    for (const cat of ["characters", "words"]) for (const l of LEVELS) {
+      const it = D[cat][l.id].find((x) => x.hz === hz);
+      if (it) return it;
+    }
+    return null;
+  }
+  let writer = null, writerChars = [], writerIdx = 0, writerReturn = null;
+  const writerOpen = () => $("#writer").classList.contains("show");
+  const cssVar = (n) => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
+
+  function openWriter(hz) {
+    const it = findItem(hz) || { hz, py: "", en: "" };
+    writerChars = [...it.hz];
+    writerReturn = document.activeElement;
+    const box = $("#writer");
+    box.innerHTML = `
+      <div class="w-card" role="dialog" aria-modal="true" aria-labelledby="wTitle">
+        <button class="w-x" id="wClose" aria-label="Close">✕</button>
+        <p class="eyebrow" id="wTitle">Write it · 写</p>
+        <div class="w-word">${it.py ? colorHz(it.hz, it.py) : esc(it.hz)}<span class="w-mean">${esc(it.py)}${it.en ? " · " + esc(it.en) : ""}</span></div>
+        ${writerChars.length > 1 ? `<div class="w-tabs">${writerChars.map((c, k) => `<button class="w-tab" data-wi="${k}" aria-label="Character ${k + 1}: ${esc(c)}">${esc(c)}</button>`).join("")}</div>` : ""}
+        <div class="w-pad" id="wPad">
+          <svg class="w-grid" viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true"><path d="M0 0L100 100M100 0L0 100M50 0V100M0 50H100"/></svg>
+          <div id="wTarget"></div>
+        </div>
+        <p class="w-msg" id="wMsg" aria-live="polite"></p>
+        <div class="w-ctl">
+          <button class="btn soft" id="wWatch">Watch strokes</button>
+          <button class="btn primary" id="wQuiz">Write it yourself</button>
+        </div>
+      </div>`;
+    box.classList.add("show");
+    document.body.classList.add("modal-open");
+    $("#wClose").addEventListener("click", closeWriter);
+    $("#wWatch").addEventListener("click", watchStrokes);
+    $("#wQuiz").addEventListener("click", startWriting);
+    box.querySelectorAll("[data-wi]").forEach((b) => b.addEventListener("click", () => loadWriterChar(+b.dataset.wi)));
+    $("#wClose").focus();
+    loadWriterChar(0);
+  }
+
+  function loadWriterChar(k) {
+    writerIdx = k;
+    document.querySelectorAll(".w-tab").forEach((b, j) => b.classList.toggle("on", j === k));
+    const target = $("#wTarget"), pad = $("#wPad");
+    target.innerHTML = "";
+    const size = Math.max(180, Math.min(280, window.innerWidth - 100));
+    pad.style.width = pad.style.height = size + "px";
+    if (!window.HanziWriter) {
+      writer = null;
+      $("#wMsg").textContent = "Writing practice couldn't load. Check your connection and try again.";
+      return;
+    }
+    $("#wMsg").textContent = "Loading strokes…";
+    writer = HanziWriter.create(target, writerChars[k], {
+      width: size, height: size, padding: 14,
+      showOutline: true, showCharacter: true,
+      strokeColor: cssVar("--ink"), outlineColor: cssVar("--line"),
+      drawingColor: cssVar("--red"), highlightColor: cssVar("--jade"),
+      strokeAnimationSpeed: 1, delayBetweenStrokes: 250,
+      charDataLoader: (c, onLoad, onError) => {
+        fetch("strokes/" + encodeURIComponent(c) + ".json")
+          .then((r) => { if (!r.ok) throw new Error("HTTP " + r.status); return r.json(); })
+          .then(onLoad).catch(onError);
+      },
+      onLoadCharDataSuccess: (data) => {
+        const n = data.strokes.length;
+        $("#wMsg").textContent = `${n} stroke${n === 1 ? "" : "s"}. Watch the order, then write it yourself.`;
+      },
+      onLoadCharDataError: () => {
+        $("#wMsg").textContent = "Sorry, the strokes for this character couldn't be loaded.";
+      }
+    });
+    watchStrokes();
+  }
+
+  function watchStrokes() {
+    if (!writer) return;
+    writer.cancelQuiz();
+    writer.showOutline();
+    writer.animateCharacter();
+  }
+
+  function startWriting() {
+    if (!writer) return;
+    const expert = S.level === "expert";
+    if (expert) writer.hideOutline(); else writer.showOutline();
+    $("#wMsg").textContent = expert ? "Write it from memory. A hint appears after 3 misses." : "Trace each stroke over the grey outline, in order.";
+    const w = writer;
+    writer.quiz({
+      showHintAfterMisses: 3,
+      onMistake: () => { if (w === writer) $("#wMsg").textContent = "Not quite. Try that stroke again: check its start point and direction."; },
+      onCorrectStroke: (d) => { if (w === writer && d.strokesRemaining) $("#wMsg").textContent = `Good. ${d.strokesRemaining} to go.`; },
+      onComplete: (d) => {
+        if (w !== writer) return;
+        const gained = d.totalMistakes <= 2 ? 5 : 2;
+        touchStreak(); S.xp += gained; save(); renderHeader();
+        const more = writerIdx < writerChars.length - 1;
+        $("#wMsg").innerHTML = `<b>${d.totalMistakes === 0 ? "完美! Perfect!" : "写好了! Well done!"}</b> ${d.totalMistakes} mistake${d.totalMistakes === 1 ? "" : "s"} · +${gained} XP${more ? " · next character…" : ""}`;
+        if (more) setTimeout(() => { if (w === writer && writerOpen()) loadWriterChar(writerIdx + 1); }, 1600);
+      }
+    });
+  }
+
+  function closeWriter() {
+    if (!writerOpen()) return;
+    if (writer) { try { writer.cancelQuiz(); } catch (e) { /* already stopped */ } }
+    writer = null;
+    const box = $("#writer");
+    box.classList.remove("show");
+    box.innerHTML = "";
+    document.body.classList.remove("modal-open");
+    if (writerReturn && document.contains(writerReturn)) writerReturn.focus({ preventScroll: true });
+  }
+
   /* ---------- Pools & progress ---------- */
   function pool(cat, level) {
     if (cat === "numbers") return D.numberStudy[level].map(numItem);
+    if (cat === "tones") return tonePool(level);
     return D[cat][level];
   }
   function masteredCount(cat, level) {
@@ -171,7 +311,7 @@
   }
   function totalMastered() {
     let n = 0;
-    for (const c of CATS) if (c.id !== "numbers") for (const l of LEVELS) n += masteredCount(c.id, l.id);
+    for (const c of CATS) if (!SCORED.includes(c.id)) for (const l of LEVELS) n += masteredCount(c.id, l.id);
     return n;
   }
 
@@ -246,9 +386,10 @@
         ${CATS.map((c) => {
           const items = pool(c.id, S.level);
           const best = S.best[S.level + ":" + c.id];
-          const m = c.id === "numbers" ? null : masteredCount(c.id, S.level);
-          const pct = c.id === "numbers" ? (best || 0) : Math.round((m / items.length) * 100);
-          const label = c.id === "numbers" ? (best != null ? `Best score ${best}%` : "Not tried yet") : `${m} / ${items.length} mastered`;
+          const scored = SCORED.includes(c.id);
+          const m = scored ? null : masteredCount(c.id, S.level);
+          const pct = scored ? (best || 0) : Math.round((m / items.length) * 100);
+          const label = scored ? (best != null ? `Best score ${best}%` : "Not tried yet") : `${m} / ${items.length} mastered`;
           return `
           <article class="cat cat-${c.id}">
             <div class="cat-top">
@@ -257,7 +398,7 @@
             </div>
             <h3>${c.name}</h3>
             <p>${c.blurb}</p>
-            <div class="cat-meta">${label}${best != null && c.id !== "numbers" ? ` · best ${best}%` : ""}</div>
+            <div class="cat-meta">${label}${best != null && !scored ? ` · best ${best}%` : ""}</div>
             <div class="cat-actions">
               <a class="btn soft" href="#/learn/${c.id}">Study</a>
               <a class="btn primary" href="#/quiz/${c.id}">Practise</a>
@@ -298,7 +439,7 @@
           <h3>New to Mandarin? Read this first.</h3>
           <p>Mandarin is written in <b>characters</b> (汉字) and spelled out in the Latin alphabet with <b>pinyin</b>. Pinyin uses accent marks for the four <b>tones</b>: the same sound with a different pitch is a different word. Throughout the site tones have colours:
             <span class="chip t1">1st ā</span> <span class="chip t2">2nd á</span> <span class="chip t3">3rd ǎ</span> <span class="chip t4">4th à</span> <span class="chip t5">neutral a</span></p>
-          <a class="btn soft" href="#/tones">Hear the tones</a>
+          <div class="guide-ctl"><a class="btn soft" href="#/tones">Hear the tones</a> <a class="btn primary" href="#/quiz/tones">Practise tones</a></div>
         </div>
       </div>
     </section>`;
@@ -314,9 +455,9 @@
     <section class="page-head">
       <a class="back" href="#/">← Home</a>
       <h1>The four tones <span class="zh-sub">四声</span></h1>
-      <p class="lede">In Mandarin the pitch of your voice changes the meaning. Here is the syllable <b>ma</b> in each tone. Tap a card to hear it.</p>
+      <p class="lede">In Mandarin the pitch of your voice changes the meaning. Here is the syllable <b>ma</b> in each tone. Tap a card to hear it, then test your ear with tone practice.</p>
     </section>
-    <div class="tones">
+    <div class="tone-grid">
       ${D.tones.map((t) => `
         <button class="tone t${t.n}" data-say="${t.hz}">
           <svg viewBox="0 0 120 70" class="contour" aria-hidden="true"><line x1="6" x2="114" y1="10" y2="10"/><line x1="6" x2="114" y1="62" y2="62"/><path d="${t.path}"/></svg>
@@ -332,7 +473,10 @@
       <div class="fact"><b>2</b><p><b>Grammar is friendly.</b> No verb conjugations, no plurals, no genders. 我吃, 你吃, 他吃: I eat, you eat, he eats.</p></div>
       <div class="fact"><b>3</b><p><b>Tone colours help memory.</b> Watch the colours as you study and your brain will start to link pitch and character.</p></div>
     </section>
-    <div class="center"><a class="btn primary big" href="#/learn/characters">Start with your first characters →</a></div>`;
+    <div class="center cta-row">
+      <a class="btn primary big" href="#/quiz/tones">Test your ear: practise tones →</a>
+      <a class="btn soft big" href="#/learn/characters">Start with your first characters</a>
+    </div>`;
   }
 
   /* ---------- Study (flashcards) ---------- */
@@ -352,7 +496,7 @@
     <section class="page-head">
       <a class="back" href="#/">← Home</a>
       <h1>${c.name} <span class="zh-sub">${c.zh}</span></h1>
-      <p class="lede">${lv.name} · Tap the card to flip it. Use ← → keys or swipe.</p>
+      <p class="lede">${lv.name} · Tap the card to flip it. Use ← → keys or swipe.${canWrite(cat) ? " Tap the pen to practise writing." : ""}</p>
     </section>
     ${tips ? `<div class="tips">${tips.map((t) => `<div class="tip"><b>${esc(t[0])}</b><span>${esc(t[1])}</span></div>`).join("")}</div>` : ""}
     <div class="study">
@@ -373,6 +517,7 @@
       <div class="study-ctl">
         <button class="btn round" id="prev" ${i === 0 ? "disabled" : ""} aria-label="Previous">←</button>
         ${speakBtn(it.hz, "Hear it")}
+        ${canWrite(cat) ? writeBtn(it.hz) : ""}
         <button class="btn soft" id="flipBtn">${flipped ? "Show front" : "Reveal"}</button>
         <button class="btn round" id="next" aria-label="Next">${i === items.length - 1 ? "✓" : "→"}</button>
       </div>
@@ -490,6 +635,61 @@
     return q;
   }
 
+  /* ---------- Tone practice ---------- */
+  // Skip words whose spoken tones differ from the written ones (tone sandhi):
+  // 一 and 不 change tone, and a 3rd tone before another 3rd tone is said as a 2nd.
+  const sandhiSafe = (it) => !/[一不]/.test(it.hz) && !tonesOf(it.py).some((t, i, a) => t === 3 && a[i + 1] === 3);
+  function tonePool(level) {
+    const C = D.characters, W = D.words;
+    if (level === "beginner") return C.beginner.concat(C.early);
+    const words = level === "early" ? W.beginner.concat(W.early) : W.early.concat(W.expert);
+    return words.filter((it) => it.py.split(" ").length >= 2 && sandhiSafe(it));
+  }
+  function patternVariants(pat, n) {
+    const out = [], seen = new Set([pat.join()]);
+    let guard = 0;
+    while (out.length < n && guard++ < 300) {
+      const p = pat.slice();
+      const changes = guard > 60 ? 2 : 1;
+      for (let c = 0; c < changes; c++) {
+        const i = rand(p.length);
+        const choices = [1, 2, 3, 4].concat(i > 0 && i === p.length - 1 ? [5] : []).filter((t) => t !== p[i]);
+        p[i] = choices[rand(choices.length)];
+      }
+      if (!seen.has(p.join())) { seen.add(p.join()); out.push(p); }
+    }
+    return out;
+  }
+  const contour = (t) => `<svg viewBox="0 0 120 70" class="mini-contour t${t}" aria-hidden="true"><path d="${D.tones.find((x) => x.n === t).path}"/></svg>`;
+  const patternHtml = (pat) => `<span class="opt-tones">${pat.map((t) => `<span class="t${t}">${TONE_NAMES[t]}</span>`).join(" + ")}</span>`;
+
+  function buildToneQuestion(level, item) {
+    const pat = tonesOf(item.py);
+    const kind = tts.ok() && (level === "beginner" || Math.random() < 0.75) ? "listen" : "recall";
+    const q = { cat: "tones", item, kind, say: item.hz };
+    const hint = level !== "expert" ? `<div class="q-py">${esc(plainPy(item.py))}</div>` : "";
+    const one = pat.length === 1;
+    if (kind === "listen") {
+      q.prompt = one ? "Listen. Which tone do you hear?" : "Listen. Which tones do you hear?";
+      q.big = `<button class="listen-big" data-say="${esc(item.hz)}">${speakerSvg}<span>Play again</span></button>${hint}`;
+      q.autoplay = true;
+    } else {
+      q.prompt = one ? "Which tone does this character have?" : "Which tones does this word have?";
+      q.big = `<div class="q-hz words">${esc(item.hz)}</div>${hint}`;
+    }
+    if (one) {
+      q.options = [1, 2, 3, 4].map((t) => ({ html: `<span class="opt-tone">${contour(t)}<span class="t${t}">${TONE_NAMES[t]} tone</span></span>`, correct: t === pat[0] }));
+    } else {
+      const key = pat.join();
+      const sylls = item.py.split(" ").map(plainSyl);
+      q.options = shuffle([pat, ...patternVariants(pat, 3)]).map((p) => ({
+        html: level === "expert" ? `<span class="opt-py">${esc(sylls.map((s, i) => withTone(s, p[i])).join(" "))}</span>` : patternHtml(p),
+        correct: p.join() === key
+      }));
+    }
+    return q;
+  }
+
   function startQuiz(cat) {
     const level = S.level;
     let qs;
@@ -498,6 +698,8 @@
       let guard = 0;
       while (nums.size < QUIZ_LEN && guard++ < 500) nums.add(randNum(level));
       qs = [...nums].map((n) => buildNumberQuestion(level, n));
+    } else if (cat === "tones") {
+      qs = shuffle(tonePool(level)).slice(0, QUIZ_LEN).map((it) => buildToneQuestion(level, it));
     } else {
       const items = D[cat][level]
         .map((it) => ({ it, w: Math.random() + (5 - (S.mastery[mkey(cat, it.hz)] || 0)) * 0.3 }))
@@ -553,7 +755,7 @@
     } else {
       quiz.combo = 0; quiz.missed.push(q.item);
     }
-    if (q.cat !== "numbers") {
+    if (!SCORED.includes(q.cat)) {
       const key = mkey(q.cat, q.item.hz), cur = S.mastery[key] || 0;
       S.mastery[key] = ok ? Math.min(cur + 1, 5) : Math.max(cur - 1, 0);
     }
@@ -568,8 +770,9 @@
       <div class="fb-card">
         <div class="fb-hz ${q.cat}">${hzHtml(q.cat, it)}</div>
         <div class="fb-info">
-          <div class="fb-py">${pyHtml(q.cat, it.py)} ${speakBtn(it.hz)}</div>
+          <div class="fb-py">${pyHtml(q.cat, it.py)} ${speakBtn(it.hz)}${canWrite(q.cat) ? writeBtn(it.hz) : ""}</div>
           <div class="fb-en">${isNum ? it.en : esc(it.en)}</div>
+          ${q.cat === "tones" ? `<div class="fb-note">Tones: ${patternHtml(tonesOf(it.py))}</div>` : ""}
           ${it.note ? `<div class="fb-note">${esc(it.note)}</div>` : ""}
         </div>
       </div>
@@ -628,7 +831,7 @@
           ${missed.map((it) => `<div class="rev">
             <div class="rev-hz ${cat}">${hzHtml(cat, it)}</div>
             <div class="rev-info"><div class="rev-py">${pyHtml(cat, it.py)}</div><div class="rev-en">${isNum ? it.en : esc(it.en)}</div></div>
-            ${speakBtn(it.hz)}</div>`).join("")}
+            <div class="rev-btns">${speakBtn(it.hz)}${canWrite(cat) ? writeBtn(it.hz) : ""}</div></div>`).join("")}
         </div>
       </div>` : `<p class="center perfect">No mistakes. 一百分! (a perfect hundred)</p>`}
       ${level !== "expert" && pct >= 90 ? `<div class="center"><button class="btn soft" id="levelUp">Feeling confident? Try ${levelOf(LEVELS[LEVELS.findIndex((l) => l.id === level) + 1].id).name} →</button></div>` : ""}
@@ -659,11 +862,15 @@
   /* ---------- Global events ---------- */
   document.addEventListener("click", (e) => {
     const s = e.target.closest("[data-say]");
-    if (s) { e.stopPropagation(); tts.say(s.dataset.say); }
+    if (s) { e.stopPropagation(); tts.say(s.dataset.say); return; }
+    const w = e.target.closest("[data-write]");
+    if (w) { e.stopPropagation(); openWriter(w.dataset.write); }
   }, true);
+  $("#writer").addEventListener("click", (e) => { if (e.target.id === "writer") closeWriter(); });
 
   document.addEventListener("keydown", (e) => {
     if (e.metaKey || e.ctrlKey || e.altKey) return;
+    if (writerOpen()) { if (e.key === "Escape") closeWriter(); return; }
     const route = location.hash;
     if (route.startsWith("#/quiz") && quiz) {
       if (!quiz.answered && /^[1-4]$/.test(e.key)) { const k = +e.key - 1; if (k < quiz.qs[quiz.i]?.options.length) answer(k); }
@@ -679,7 +886,9 @@
   function route() {
     const h = location.hash.replace(/^#\/?/, "").split("/");
     study = null;
-    if (h[0] === "learn" && catOf(h[1])) renderLearn(h[1]);
+    closeWriter();
+    if (h[0] === "learn" && h[1] === "tones") renderTones();
+    else if (h[0] === "learn" && catOf(h[1])) renderLearn(h[1]);
     else if (h[0] === "quiz" && catOf(h[1])) startQuiz(h[1]);
     else if (h[0] === "tones") renderTones();
     else { quiz = null; renderHome(); }
