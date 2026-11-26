@@ -182,7 +182,7 @@
 
   /* ---------- Writing practice (stroke order) ---------- */
   const penSvg = `<svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true"><path fill="currentColor" d="M3 17.25V21h3.75L17.81 9.94l-3.75-3.75L3 17.25zM20.71 7.04a1 1 0 0 0 0-1.41l-2.34-2.34a1 1 0 0 0-1.41 0l-1.83 1.83 3.75 3.75 1.83-1.83z"/></svg>`;
-  const writeBtn = (hz) => `<button class="speak write" data-write="${esc(hz)}" aria-label="Practise writing ${esc(hz)}" title="Practise writing">${penSvg}</button>`;
+  const writeBtn = (hz) => `<button class="speak write" data-write="${esc(hz)}" aria-label="Practice writing ${esc(hz)}" title="Practice writing">${penSvg}</button>`;
   const canWrite = (cat) => cat === "characters" || cat === "words" || cat === "tones";
   function findItem(hz) {
     for (const cat of ["characters", "words"]) for (const l of LEVELS) {
@@ -379,7 +379,7 @@
 
     <section class="block">
       <div class="block-head">
-        <h2>What would you like to practise?</h2>
+        <h2>What would you like to practice?</h2>
         <p>Study the cards first, then take a 10-question practice round. Level: <b>${lv.name}</b>.</p>
       </div>
       <div class="cats">
@@ -401,7 +401,7 @@
             <div class="cat-meta">${label}${best != null && !scored ? ` · best ${best}%` : ""}</div>
             <div class="cat-actions">
               <a class="btn soft" href="#/learn/${c.id}">Study</a>
-              <a class="btn primary" href="#/quiz/${c.id}">Practise</a>
+              <a class="btn primary" href="#/quiz/${c.id}">Practice</a>
             </div>
           </article>`;
         }).join("")}
@@ -439,7 +439,7 @@
           <h3>New to Mandarin? Read this first.</h3>
           <p>Mandarin is written in <b>characters</b> (汉字) and spelled out in the Latin alphabet with <b>pinyin</b>. Pinyin uses accent marks for the four <b>tones</b>: the same sound with a different pitch is a different word. Throughout the site tones have colours:
             <span class="chip t1">1st ā</span> <span class="chip t2">2nd á</span> <span class="chip t3">3rd ǎ</span> <span class="chip t4">4th à</span> <span class="chip t5">neutral a</span></p>
-          <div class="guide-ctl"><a class="btn soft" href="#/tones">Hear the tones</a> <a class="btn primary" href="#/quiz/tones">Practise tones</a></div>
+          <div class="guide-ctl"><a class="btn soft" href="#/tones">Hear the tones</a> <a class="btn primary" href="#/quiz/tones">Practice tones</a></div>
         </div>
       </div>
     </section>`;
@@ -474,7 +474,7 @@
       <div class="fact"><b>3</b><p><b>Tone colours help memory.</b> Watch the colours as you study and your brain will start to link pitch and character.</p></div>
     </section>
     <div class="center cta-row">
-      <a class="btn primary big" href="#/quiz/tones">Test your ear: practise tones →</a>
+      <a class="btn primary big" href="#/quiz/tones">Test your ear: practice tones →</a>
       <a class="btn soft big" href="#/learn/characters">Start with your first characters</a>
     </div>`;
   }
@@ -496,7 +496,7 @@
     <section class="page-head">
       <a class="back" href="#/">← Home</a>
       <h1>${c.name} <span class="zh-sub">${c.zh}</span></h1>
-      <p class="lede">${lv.name} · Tap the card to flip it. Use ← → keys or swipe.${canWrite(cat) ? " Tap the pen to practise writing." : ""}</p>
+      <p class="lede">${lv.name} · Tap the card to flip it. Use ← → keys or swipe.${canWrite(cat) ? " Tap the pen to practice writing." : ""}</p>
     </section>
     ${tips ? `<div class="tips">${tips.map((t) => `<div class="tip"><b>${esc(t[0])}</b><span>${esc(t[1])}</span></div>`).join("")}</div>` : ""}
     <div class="study">
@@ -525,7 +525,7 @@
     </div>
     <div class="study-end ${i === items.length - 1 && flipped ? "show" : ""}">
       <p>You've seen every card. Ready to test yourself?</p>
-      <a class="btn primary big" href="#/quiz/${cat}">Practise ${c.name.toLowerCase()} →</a>
+      <a class="btn primary big" href="#/quiz/${cat}">Practice ${c.name.toLowerCase()} →</a>
     </div>
     <section class="block">
       <div class="block-head"><h2>All cards</h2></div>
@@ -819,7 +819,7 @@
         </div>
         ${newBest && prevBest != null ? `<div class="badge">New personal best! (was ${prevBest}%)</div>` : ""}
         <div class="res-actions">
-          <a class="btn primary big" href="#/quiz/${cat}" id="again">Practise again</a>
+          <a class="btn primary big" href="#/quiz/${cat}" id="again">Practice again</a>
           <a class="btn soft big" href="#/learn/${cat}">Study cards</a>
           <a class="btn ghost big" href="#/">Home</a>
         </div>

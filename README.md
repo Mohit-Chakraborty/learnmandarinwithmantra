@@ -1,8 +1,8 @@
 # Learn Mandarin with Mantra
 
-A static website for learning and practising Mandarin from zero: characters, words, phrases, numbers and tones, at three levels (Beginner, Early learner, Expert). It has no build step.
+A static website for learning and practicing Mandarin from zero: characters, words, phrases, numbers and tones, at three levels (Beginner, Early learner, Expert). It has no build step.
 
-Learners can also practise writing any character or word in stroke order: watch it animated, then trace it (Beginner and Early learner) or write it from memory (Expert).
+Learners can also practice writing any character or word in stroke order: watch it animated, then trace it (Beginner and Early learner) or write it from memory (Expert).
 
 Live site: https://learnmandarinwithmantra.vercel.app
 
