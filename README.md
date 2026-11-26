@@ -20,7 +20,7 @@ Then open http://localhost:8000. You can also open `index.html` directly.
 - `styles.css`: design, with light and dark themes and a responsive layout
 - `data.js`: all learning content (characters, words, phrases, number tips, tones). Add items here.
 - `app.js`: study cards, quizzes, number generator, progress, XP and streaks (saved in the browser's localStorage)
-- `vendor/hanzi-writer/`: [Hanzi Writer](https://github.com/chanind/hanzi-writer) 3.7.3, which draws and checks the strokes (MIT licence)
+- `vendor/hanzi-writer/`: [Hanzi Writer](https://github.com/chanind/hanzi-writer) 3.7.3, which draws and checks the strokes (MIT license)
 - `strokes/`: stroke data for every character used in the Characters and Words lessons, from [hanzi-writer-data](https://github.com/chanind/hanzi-writer-data) (Arphic Public License, see `strokes/README.md`)
 
 ## Adding characters

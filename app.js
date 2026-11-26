@@ -86,7 +86,7 @@
     if (i < 0) return base;
     return (base.slice(0, i + 1) + MARK_CODES[t] + base.slice(i + 1)).normalize("NFC");
   }
-  // Phrases have punctuation and joined words, so they are shown uncoloured.
+  // Phrases have punctuation and joined words, so they are shown uncolored.
   const pyHtml = (cat, py) => cat === "phrases" ? esc(py) : colorPy(py);
   const hzHtml = (cat, it) => cat === "phrases" ? esc(it.hz) : colorHz(it.hz, it.py);
 
@@ -272,7 +272,7 @@
     if (!writer) return;
     const expert = S.level === "expert";
     if (expert) writer.hideOutline(); else writer.showOutline();
-    $("#wMsg").textContent = expert ? "Write it from memory. A hint appears after 3 misses." : "Trace each stroke over the grey outline, in order.";
+    $("#wMsg").textContent = expert ? "Write it from memory. A hint appears after 3 misses." : "Trace each stroke over the gray outline, in order.";
     const w = writer;
     writer.quiz({
       showHintAfterMisses: 3,
@@ -437,7 +437,7 @@
         <div class="guide-glyph">声调</div>
         <div>
           <h3>New to Mandarin? Read this first.</h3>
-          <p>Mandarin is written in <b>characters</b> (汉字) and spelled out in the Latin alphabet with <b>pinyin</b>. Pinyin uses accent marks for the four <b>tones</b>: the same sound with a different pitch is a different word. Throughout the site tones have colours:
+          <p>Mandarin is written in <b>characters</b> (汉字) and spelled out in the Latin alphabet with <b>pinyin</b>. Pinyin uses accent marks for the four <b>tones</b>: the same sound with a different pitch is a different word. Throughout the site tones have colors:
             <span class="chip t1">1st ā</span> <span class="chip t2">2nd á</span> <span class="chip t3">3rd ǎ</span> <span class="chip t4">4th à</span> <span class="chip t5">neutral a</span></p>
           <div class="guide-ctl"><a class="btn soft" href="#/tones">Hear the tones</a> <a class="btn primary" href="#/quiz/tones">Practice tones</a></div>
         </div>
@@ -471,7 +471,7 @@
     <section class="block facts">
       <div class="fact"><b>1</b><p><b>Characters are pictures and parts.</b> Many started as drawings (山 mountain, 木 tree). Others combine parts: 女 woman + 子 child = 好 good.</p></div>
       <div class="fact"><b>2</b><p><b>Grammar is friendly.</b> No verb conjugations, no plurals, no genders. 我吃, 你吃, 他吃: I eat, you eat, he eats.</p></div>
-      <div class="fact"><b>3</b><p><b>Tone colours help memory.</b> Watch the colours as you study and your brain will start to link pitch and character.</p></div>
+      <div class="fact"><b>3</b><p><b>Tone colors help memory.</b> Watch the colors as you study and your brain will start to link pitch and character.</p></div>
     </section>
     <div class="center cta-row">
       <a class="btn primary big" href="#/quiz/tones">Test your ear: practice tones →</a>

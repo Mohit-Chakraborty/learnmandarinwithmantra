@@ -1,6 +1,6 @@
 // Content for 小步 Xiǎobù.
 // Character/word pinyin is written one syllable per character (space separated)
-// so syllables can be tone-coloured and matched to their characters.
+// so syllables can be tone-colored and matched to their characters.
 window.DATA = {
   characters: {
     beginner: [
@@ -58,7 +58,7 @@ window.DATA = {
       { hz: "稳", py: "wěn", en: "steady; stable", note: "The 禾 grain radical on the left: a steady harvest." },
       { hz: "赢", py: "yíng", en: "to win", note: "A dense character built from 亡, 口, 月, 贝 and 凡." },
       { hz: "疑", py: "yí", en: "to doubt", note: "怀疑 huáiyí = to suspect." },
-      { hz: "尊", py: "zūn", en: "to respect; honour", note: "Once a drawing of hands raising a wine vessel in offering." },
+      { hz: "尊", py: "zūn", en: "to respect; honor", note: "Once a drawing of hands raising a wine vessel in offering." },
       { hz: "感", py: "gǎn", en: "to feel", note: "Heart 心 at the bottom again. 感谢 = to thank." },
       { hz: "意", py: "yì", en: "meaning; idea", note: "Sound 音 over heart 心: the meaning behind words." },
       { hz: "情", py: "qíng", en: "emotion; feeling", note: "Heart radical 忄 + 青 (which gives the sound “-ing”)." },
@@ -80,7 +80,7 @@ window.DATA = {
       { hz: "老师", py: "lǎo shī", en: "teacher", note: "老 means old, a sign of respect." },
       { hz: "学生", py: "xué sheng", en: "student", note: "学 study + 生 life/person." },
       { hz: "中国", py: "zhōng guó", en: "China", note: "Middle 中 + country 国." },
-      { hz: "妈妈", py: "mā ma", en: "mum; mother" },
+      { hz: "妈妈", py: "mā ma", en: "mom; mother" },
       { hz: "爸爸", py: "bà ba", en: "dad; father" },
       { hz: "水果", py: "shuǐ guǒ", en: "fruit", note: "Water 水 + fruit 果: juicy fruit." },
       { hz: "米饭", py: "mǐ fàn", en: "cooked rice" },
@@ -97,7 +97,7 @@ window.DATA = {
     early: [
       { hz: "电脑", py: "diàn nǎo", en: "computer", note: "Literally “electric brain”." },
       { hz: "手机", py: "shǒu jī", en: "mobile phone", note: "Literally “hand machine”." },
-      { hz: "飞机", py: "fēi jī", en: "aeroplane", note: "Literally “flying machine”." },
+      { hz: "飞机", py: "fēi jī", en: "airplane", note: "Literally “flying machine”." },
       { hz: "医院", py: "yī yuàn", en: "hospital" },
       { hz: "学校", py: "xué xiào", en: "school" },
       { hz: "工作", py: "gōng zuò", en: "work; job" },
