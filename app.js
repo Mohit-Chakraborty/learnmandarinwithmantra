@@ -29,13 +29,20 @@
 
   /* ---------- Storage ---------- */
   const KEY = "xiaobu-progress-v1";
-  const defaults = { level: "beginner", xp: 0, streak: 0, lastDay: null, mastery: {}, best: {}, answered: 0, correct: 0, saved: [] };
+  // authChoice: null until the visitor picks "sign in" or "continue without"; owner: the
+  // account this browser's progress belongs to; updated: time of the last local change.
+  const defaults = { level: "beginner", xp: 0, streak: 0, lastDay: null, mastery: {}, best: {}, answered: 0, correct: 0, saved: [], authChoice: null, owner: null, updated: 0 };
+  const fresh = () => JSON.parse(JSON.stringify(defaults));
   function load() {
-    try { return Object.assign({}, defaults, JSON.parse(localStorage.getItem(KEY) || "{}")); }
-    catch (e) { return Object.assign({}, defaults); }
+    try { return Object.assign(fresh(), JSON.parse(localStorage.getItem(KEY) || "{}")); }
+    catch (e) { return fresh(); }
   }
   let S = load();
-  function save() { try { localStorage.setItem(KEY, JSON.stringify(S)); } catch (e) { /* storage unavailable */ } }
+  function save(opts = {}) {
+    if (opts.touch !== false) S.updated = Date.now();
+    try { localStorage.setItem(KEY, JSON.stringify(S)); } catch (e) { /* storage unavailable */ }
+    if (opts.sync !== false) schedulePush();
+  }
 
   const dayStr = (d) => d.getFullYear() + "-" + (d.getMonth() + 1) + "-" + d.getDate();
   const yesterday = () => { const d = new Date(); d.setDate(d.getDate() - 1); return dayStr(d); };
@@ -342,7 +349,8 @@
         <span class="stat-ico seal">${r.zh}</span>
         <div class="rank-body"><b>${S.xp} XP</b><span class="stat-lbl">${r.en}</span>
           <div class="xpbar"><i style="width:${pct}%"></i></div></div>
-      </div>`;
+      </div>
+      ${accountButton()}`;
   }
 
   /* ---------- Home ---------- */
@@ -503,7 +511,7 @@
     }));
     $("#potdCtl").addEventListener("click", (e) => {
       if (!e.target.closest("#potdSave")) return;
-      toggleSave(ph);
+      if (!toggleSave(ph)) return;
       $("#potdCtl").innerHTML = potdSaveBtn(ph);
       toast(isSaved(ph) ? "Saved to My words." : "Removed from My words.");
     });
@@ -805,11 +813,15 @@
 
   const savedKey = (x) => x.hz + "|" + markedKey(x.py);
   const isSaved = (e) => S.saved.some((x) => savedKey(x) === savedKey(e));
+  // My words is capped so a signed-in learner's progress fits in their account (see Accounts below).
+  const MAX_SAVED = 60;
   function toggleSave(e) {
     const k = savedKey(e);
     if (isSaved(e)) S.saved = S.saved.filter((x) => savedKey(x) !== k);
+    else if (S.saved.length >= MAX_SAVED) { toast(`My words holds up to ${MAX_SAVED} words. Remove one to add another.`); return false; }
     else S.saved.unshift({ hz: e.hz, py: e.py, en: e.short, ...(e.note ? { note: e.note } : {}), ...(e.ph ? { ph: true } : {}) });
     save();
+    return true;
   }
 
   function resultCard(e, i) {
@@ -868,7 +880,7 @@
     });
     $("#lkResults").addEventListener("click", (e) => {
       const b = e.target.closest("[data-save]");
-      if (b) { toggleSave(lookupResults[+b.dataset.save]); drawLookupResults(); refreshMyWords(); return; }
+      if (b) { if (toggleSave(lookupResults[+b.dataset.save])) { drawLookupResults(); refreshMyWords(); } return; }
       const sug = e.target.closest("[data-suggest]");
       if (sug) { input.value = sug.dataset.suggest; runLookup(); input.focus(); }
     });
@@ -1151,6 +1163,321 @@
     setTimeout(() => { box.innerHTML = ""; }, 4200);
   }
 
+  /* ---------- Accounts (Clerk) and progress sync ---------- */
+  // Sign-in is optional. Clerk's scripts load only when someone signs in or returns signed in.
+  // A signed-in learner's progress is stored as a compact JSON string in their Clerk user's
+  // unsafeMetadata (writable from the browser; Clerk allows 8 KB of metadata per user).
+  const SYNC_FIELD = "lmm";
+  const SYNC_LIMIT = 7000; // bytes, leaving headroom under Clerk's 8 KB
+  const auth = { clerk: null, loading: null, sync: "idle", pushTimer: null, retryTimer: null, userId: null };
+  const signedInUser = () => (auth.clerk && auth.clerk.user) || null;
+
+  const CAT_CODE = { characters: "c", words: "w", phrases: "p", tones: "t", numbers: "n", mywords: "y" };
+  const CODE_CAT = Object.fromEntries(Object.entries(CAT_CODE).map(([k, v]) => [v, k]));
+  function lessonNote(hz) {
+    for (const cat of ["characters", "words", "phrases"]) for (const l of LEVELS) {
+      const it = D[cat][l.id].find((x) => x.hz === hz);
+      if (it) return it.note;
+    }
+    return undefined;
+  }
+  const progressOf = (src) => ({
+    level: src.level, xp: src.xp, streak: src.streak, lastDay: src.lastDay, answered: src.answered,
+    correct: src.correct, mastery: src.mastery, best: src.best, saved: src.saved, updated: src.updated || 0
+  });
+  function pack(p) {
+    const m = {};
+    for (const [k, v] of Object.entries(p.mastery)) {
+      const i = k.indexOf(":"), code = CAT_CODE[k.slice(0, i)];
+      if (v && code) m[code + k.slice(i + 1)] = v;
+    }
+    return JSON.stringify({
+      v: 1, t: p.updated, l: p.level, x: p.xp, s: p.streak, d: p.lastDay, a: p.answered, c: p.correct, m, b: p.best,
+      w: p.saved.map((x) => [x.hz, x.py, shorten(x.en || "", 40), x.ph ? 1 : 0])
+    });
+  }
+  function unpack(str) {
+    const p = JSON.parse(str);
+    const mastery = {};
+    for (const [k, v] of Object.entries(p.m || {})) if (CODE_CAT[k[0]]) mastery[CODE_CAT[k[0]] + ":" + k.slice(1)] = v;
+    const saved = (p.w || []).map(([hz, py, en, ph]) => {
+      const note = lessonNote(hz);
+      return { hz, py, en, ...(note ? { note } : {}), ...(ph ? { ph: true } : {}) };
+    });
+    return {
+      level: LEVELS.some((l) => l.id === p.l) ? p.l : "beginner", xp: p.x || 0, streak: p.s || 0, lastDay: p.d || null,
+      answered: p.a || 0, correct: p.c || 0, mastery, best: p.b || {}, saved, updated: p.t || 0
+    };
+  }
+  const dayValue = (d) => { if (!d) return 0; const [y, m, dd] = d.split("-").map(Number); return new Date(y, m - 1, dd).getTime(); };
+
+  // Combine two copies of progress. Totals and scores only ever grow, so take the larger of
+  // each. Settings and My words come from `base`, so a word removed on one device stays removed.
+  function combine(base, other, unionSaved) {
+    const out = { ...base, mastery: { ...base.mastery }, best: { ...base.best } };
+    out.xp = Math.max(base.xp, other.xp);
+    out.answered = Math.max(base.answered, other.answered);
+    out.correct = Math.min(Math.max(base.correct, other.correct), out.answered);
+    for (const [k, v] of Object.entries(other.mastery)) out.mastery[k] = Math.max(out.mastery[k] || 0, v);
+    for (const [k, v] of Object.entries(other.best)) out.best[k] = Math.max(out.best[k] ?? 0, v);
+    if (base.lastDay === other.lastDay) out.streak = Math.max(base.streak, other.streak);
+    else if (dayValue(other.lastDay) > dayValue(base.lastDay)) { out.streak = other.streak; out.lastDay = other.lastDay; }
+    if (unionSaved) {
+      const have = new Set(base.saved.map(savedKey));
+      out.saved = base.saved.concat(other.saved.filter((x) => !have.has(savedKey(x)))).slice(0, MAX_SAVED);
+    }
+    out.updated = Math.max(base.updated, other.updated);
+    return out;
+  }
+
+  function setSync(state) {
+    auth.sync = state;
+    const el = $("#acctSync");
+    if (el) el.textContent = syncLabel();
+  }
+  const syncLabel = () => ({
+    synced: "✓ Progress saved to your account",
+    pending: "Saving progress…", syncing: "Saving progress…",
+    error: "Couldn't save to your account. Will retry.",
+    full: "Your progress is too large to save to your account. Remove some words from My words.",
+    idle: "Progress syncs across your devices."
+  }[auth.sync] || "");
+
+  function schedulePush() {
+    if (!signedInUser() || S.owner !== auth.userId) return;
+    clearTimeout(auth.pushTimer);
+    setSync("pending");
+    auth.pushTimer = setTimeout(pushNow, 2000);
+  }
+  async function pushNow() {
+    clearTimeout(auth.pushTimer);
+    const u = signedInUser();
+    if (!u || S.owner !== u.id) return;
+    const data = pack(progressOf(S));
+    if (new Blob([data]).size > SYNC_LIMIT) { setSync("full"); return; }
+    if ((u.unsafeMetadata || {})[SYNC_FIELD] === data) { setSync("synced"); return; }
+    setSync("syncing");
+    try {
+      await u.updateMetadata({ unsafeMetadata: { [SYNC_FIELD]: data } });
+      setSync("synced");
+    } catch (e) {
+      setSync("error");
+      clearTimeout(auth.retryTimer);
+      auth.retryTimer = setTimeout(pushNow, 30000);
+    }
+  }
+
+  // Bring this browser and the account into agreement after sign-in or when the tab regains focus.
+  async function syncWithAccount() {
+    const u = signedInUser();
+    if (!u) return;
+    let remote = null;
+    try { const raw = (u.unsafeMetadata || {})[SYNC_FIELD]; remote = raw ? unpack(raw) : null; } catch (e) { remote = null; }
+    const local = progressOf(S);
+    let next;
+    if (S.owner && S.owner !== u.id) next = remote || progressOf(fresh());       // another account's progress: don't mix
+    else if (!remote) next = local;                                              // first sign-in: upload this browser's progress
+    else if (S.owner === u.id) next = remote.updated >= local.updated ? combine(remote, local) : combine(local, remote);
+    else next = combine({ ...remote, level: local.level }, local, true);         // guest progress joins the account
+    Object.assign(S, next, { owner: u.id, authChoice: "account" });
+    save({ touch: false, sync: false });
+    await pushNow();
+    refreshView();
+  }
+
+  // Re-render after progress changed underneath the page, without interrupting a quiz or study session.
+  function refreshView() {
+    renderHeader();
+    const h = location.hash.replace(/^#\/?/, "").split("/")[0];
+    if (!h) renderHome();
+    else if (h === "lookup") refreshMyWords();
+  }
+
+  function onAuthChange() {
+    const id = (signedInUser() || {}).id || null;
+    if (id === auth.userId) { renderHeader(); return; }
+    auth.userId = id;
+    if (id) syncWithAccount();
+    else renderHeader();
+  }
+
+  function loadScript(src, attrs = {}) {
+    return new Promise((resolve, reject) => {
+      const el = document.createElement("script");
+      el.src = src; el.async = true; el.crossOrigin = "anonymous";
+      for (const [k, v] of Object.entries(attrs)) el.setAttribute(k, v);
+      el.onload = resolve;
+      el.onerror = () => reject(new Error("Couldn't load " + src));
+      document.head.appendChild(el);
+    });
+  }
+  function loadClerk() {
+    if (auth.clerk) return Promise.resolve(auth.clerk);
+    if (!auth.loading) {
+      auth.loading = fetch("/api/clerk-config")
+        .then((r) => { if (!r.ok) throw new Error("HTTP " + r.status); return r.json(); })
+        .then(({ publishableKey }) => {
+          if (!publishableKey) throw new Error("Sign-in isn't set up for this site yet.");
+          // The publishable key encodes the app's Clerk Frontend API host, which serves Clerk's scripts.
+          const host = atob(publishableKey.split("_")[2]).replace(/\$$/, "");
+          return loadScript(`https://${host}/npm/@clerk/ui@1/dist/ui.browser.js`)
+            .then(() => loadScript(`https://${host}/npm/@clerk/clerk-js@6/dist/clerk.browser.js`, { "data-clerk-publishable-key": publishableKey }));
+        })
+        .then(() => window.Clerk.load({ ui: { ClerkUI: window.__internal_ClerkUICtor } }))
+        .then(() => {
+          auth.clerk = window.Clerk;
+          auth.clerk.addListener(onAuthChange);
+          return auth.clerk;
+        })
+        .catch((e) => { auth.loading = null; throw e; });
+    }
+    return auth.loading;
+  }
+
+  const appleSvg = `<svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true"><path fill="currentColor" d="M16.37 12.62c-.02-2.3 1.88-3.4 1.96-3.46-1.07-1.56-2.73-1.78-3.32-1.8-1.41-.14-2.76.83-3.47.83-.72 0-1.82-.81-2.99-.79-1.54.02-2.96.9-3.75 2.27-1.6 2.78-.41 6.89 1.15 9.14.76 1.1 1.67 2.34 2.86 2.3 1.15-.05 1.58-.74 2.96-.74 1.39 0 1.77.74 2.98.72 1.23-.02 2.01-1.12 2.76-2.23.87-1.28 1.23-2.52 1.25-2.58-.03-.01-2.39-.92-2.41-3.65zM14.1 5.86c.63-.77 1.06-1.83.94-2.9-.91.04-2.01.61-2.66 1.37-.58.67-1.09 1.76-.96 2.8 1.02.08 2.05-.52 2.68-1.27z"/></svg>`;
+  const googleSvg = `<svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true"><path fill="#4285F4" d="M23.5 12.27c0-.8-.07-1.57-.2-2.31H12v4.37h6.46a5.52 5.52 0 0 1-2.4 3.62v3h3.88c2.27-2.09 3.56-5.17 3.56-8.68z"/><path fill="#34A853" d="M12 24c3.24 0 5.96-1.07 7.94-2.91l-3.88-3c-1.07.72-2.45 1.15-4.06 1.15-3.12 0-5.77-2.11-6.71-4.95H1.28v3.1A12 12 0 0 0 12 24z"/><path fill="#FBBC05" d="M5.29 14.29A7.2 7.2 0 0 1 4.91 12c0-.8.14-1.57.38-2.29v-3.1H1.28A12 12 0 0 0 0 12c0 1.94.46 3.77 1.28 5.39l4.01-3.1z"/><path fill="#EA4335" d="M12 4.77c1.76 0 3.34.61 4.59 1.8l3.44-3.44C17.95 1.19 15.23 0 12 0A12 12 0 0 0 1.28 6.61l4.01 3.1C6.23 6.88 8.88 4.77 12 4.77z"/></svg>`;
+
+  function accountButton() {
+    const u = signedInUser();
+    if (u) {
+      const label = u.firstName || (u.primaryEmailAddress && u.primaryEmailAddress.emailAddress) || "Account";
+      return `<button class="acct-btn signed" id="acctBtn" aria-haspopup="true" aria-expanded="false" title="Your account">
+        ${u.imageUrl ? `<img src="${esc(u.imageUrl)}" alt="">` : `<span>${esc(label.slice(0, 1).toUpperCase())}</span>`}</button>`;
+    }
+    return `<button class="acct-btn" id="acctBtn">Sign in</button>`;
+  }
+  function toggleAccountMenu() {
+    const existing = $("#acctMenu");
+    if (existing) { existing.remove(); $("#acctBtn")?.setAttribute("aria-expanded", "false"); return; }
+    const u = signedInUser();
+    if (!u) return;
+    const email = (u.primaryEmailAddress && u.primaryEmailAddress.emailAddress) || "";
+    const menu = document.createElement("div");
+    menu.className = "acct-menu"; menu.id = "acctMenu";
+    menu.innerHTML = `<div class="acct-who"><b>${esc(u.fullName || u.firstName || "Signed in")}</b>${email ? `<span>${esc(email)}</span>` : ""}</div>
+      <p class="acct-sync" id="acctSync">${esc(syncLabel())}</p>
+      <button class="btn soft" id="signOutBtn">Sign out</button>`;
+    $(".topbar").appendChild(menu);
+    $("#acctBtn").setAttribute("aria-expanded", "true");
+    $("#signOutBtn").addEventListener("click", signOut);
+  }
+
+  async function signOut() {
+    $("#acctMenu")?.remove();
+    await pushNow();
+    try { await auth.clerk.signOut(); } catch (e) { /* already signed out */ }
+    auth.userId = null;
+    // Progress lives in the account now, so clear this browser for whoever uses it next.
+    S = fresh();
+    save({ touch: false, sync: false });
+    toast("Signed out. Your progress is saved in your account.");
+    route();
+    showAuthPanel(true);
+  }
+
+  // The sign-in panel. On a first visit it offers "Continue without logging in".
+  function showAuthPanel(firstVisit) {
+    const box = $("#authPanel");
+    box.innerHTML = `
+      <div class="w-card auth-card" role="dialog" aria-modal="true" aria-labelledby="authTitle">
+        ${firstVisit ? "" : `<button class="w-x" id="authClose" aria-label="Close">✕</button>`}
+        <div class="auth-seal" aria-hidden="true">小步</div>
+        <h2 id="authTitle">${firstVisit ? "Welcome to Learn Mandarin with Mantra" : "Sign in"}</h2>
+        <p class="auth-lede">Sign in to keep your progress, streak and saved words on every device.</p>
+        <div class="auth-btns">
+          <button class="auth-btn apple" data-oauth="oauth_apple">${appleSvg}<span>Continue with Apple</span></button>
+          <button class="auth-btn google" data-oauth="oauth_google">${googleSvg}<span>Continue with Google</span></button>
+        </div>
+        <p class="auth-err" id="authErr" role="alert"></p>
+        <div class="auth-or"><span>or</span></div>
+        <button class="auth-skip" id="authSkip">${firstVisit ? "Continue without logging in" : "Not now"}</button>
+        <p class="auth-note">${firstVisit ? "Without an account, progress is saved in this browser only. You can sign in any time from the top bar." : "Your progress so far comes with you when you sign in."}</p>
+      </div>`;
+    box.classList.add("show");
+    document.body.classList.add("modal-open");
+    box.querySelectorAll("[data-oauth]").forEach((b) => b.addEventListener("click", () => startSignIn(b.dataset.oauth, b)));
+    $("#authSkip").addEventListener("click", () => {
+      if (!S.authChoice) { S.authChoice = "guest"; save({ touch: false, sync: false }); }
+      closeAuthPanel();
+    });
+    $("#authClose")?.addEventListener("click", closeAuthPanel);
+    box.querySelector("[data-oauth]").focus({ preventScroll: true });
+  }
+  const authPanelOpen = () => $("#authPanel").classList.contains("show");
+  function closeAuthPanel() {
+    const box = $("#authPanel");
+    box.classList.remove("show");
+    box.innerHTML = "";
+    if (!writerOpen()) document.body.classList.remove("modal-open");
+  }
+
+  async function startSignIn(strategy, btn) {
+    const btns = document.querySelectorAll("[data-oauth]");
+    btns.forEach((b) => { b.disabled = true; });
+    btn.classList.add("busy");
+    $("#authErr").textContent = "";
+    try {
+      const clerk = await loadClerk();
+      if (clerk.user) { closeAuthPanel(); onAuthChange(); return; }
+      await clerk.client.signIn.authenticateWithRedirect({
+        strategy,
+        redirectUrl: location.origin + "/?auth=callback",
+        redirectUrlComplete: location.origin + "/?auth=done" + location.hash
+      });
+    } catch (e) {
+      const msg = (e && e.errors && e.errors[0] && (e.errors[0].longMessage || e.errors[0].message)) || (e && e.message) || "Something went wrong.";
+      $("#authErr").textContent = "Sign-in didn't start: " + msg;
+      btns.forEach((b) => { b.disabled = false; });
+      btn.classList.remove("busy");
+    }
+  }
+
+  // Back from Apple or Google: let Clerk finish signing in (or create the account for a new user).
+  async function finishSignIn() {
+    const box = $("#authPanel");
+    box.innerHTML = `<div class="w-card auth-card"><div class="auth-seal" aria-hidden="true">小步</div><h2>Signing you in…</h2><p class="auth-lede" id="authWait">One moment.</p></div>`;
+    box.classList.add("show");
+    const done = location.origin + "/?auth=done";
+    try {
+      const clerk = await loadClerk();
+      await clerk.handleRedirectCallback({
+        signInUrl: location.origin + "/?auth=signin", signUpUrl: location.origin + "/?auth=signup",
+        continueSignUpUrl: location.origin + "/?auth=signup",
+        firstFactorUrl: location.origin + "/?auth=signin", secondFactorUrl: location.origin + "/?auth=signin",
+        signInFallbackRedirectUrl: done, signUpFallbackRedirectUrl: done
+      }, async (to) => {
+        const step = new URL(to, location.origin).searchParams.get("auth");
+        // Clerk needs something more (e.g. an extra sign-up field): show its own form for that step.
+        if (step === "signup" || step === "signin") {
+          history.replaceState(null, "", "/" + location.hash);
+          closeAuthPanel();
+          if (step === "signup") clerk.openSignUp({ forceRedirectUrl: done });
+          else clerk.openSignIn({ forceRedirectUrl: done });
+          return;
+        }
+        location.replace(to);
+      });
+    } catch (e) {
+      history.replaceState(null, "", "/");
+      const msg = (e && e.errors && e.errors[0] && (e.errors[0].longMessage || e.errors[0].message)) || (e && e.message) || "";
+      showAuthPanel(!S.authChoice);
+      $("#authErr").textContent = "Sign-in didn't finish. " + msg;
+    }
+  }
+
+  function initAuth() {
+    const step = new URLSearchParams(location.search).get("auth");
+    if (step === "callback") { finishSignIn(); return; }
+    if (step) history.replaceState(null, "", "/" + location.hash);
+    if (step === "done" || S.owner) {
+      // Signed in now or before: reconnect quietly and sync.
+      loadClerk().then(() => {
+        onAuthChange();
+        if (step === "done" && signedInUser()) toast("Signed in. Your progress will sync across devices.");
+      }).catch(() => { if (step === "done") toast("Couldn't reach the sign-in service. Your progress is still saved in this browser."); });
+    } else if (!S.authChoice) showAuthPanel(true);
+  }
+
   /* ---------- Global events ---------- */
   document.addEventListener("click", (e) => {
     const s = e.target.closest("[data-say]");
@@ -1159,10 +1486,26 @@
     if (w) { e.stopPropagation(); openWriter(w.dataset.write); }
   }, true);
   $("#writer").addEventListener("click", (e) => { if (e.target.id === "writer") closeWriter(); });
+  $("#authPanel").addEventListener("click", (e) => { if (e.target.id === "authPanel" && $("#authClose")) closeAuthPanel(); });
+  $("#stats").addEventListener("click", (e) => {
+    if (!e.target.closest("#acctBtn")) return;
+    if (signedInUser()) toggleAccountMenu(); else showAuthPanel(false);
+  });
+  document.addEventListener("click", (e) => {
+    const menu = $("#acctMenu");
+    if (menu && !menu.contains(e.target) && !e.target.closest("#acctBtn")) toggleAccountMenu();
+  });
+  document.addEventListener("visibilitychange", () => {
+    if (!signedInUser()) return;
+    if (document.visibilityState === "hidden") pushNow();
+    else signedInUser().reload().then(syncWithAccount).catch(() => {});
+  });
 
   document.addEventListener("keydown", (e) => {
     if (e.metaKey || e.ctrlKey || e.altKey) return;
     if (writerOpen()) { if (e.key === "Escape") closeWriter(); return; }
+    if (authPanelOpen()) { if (e.key === "Escape" && $("#authClose")) closeAuthPanel(); return; }
+    if (e.key === "Escape" && $("#acctMenu")) { toggleAccountMenu(); return; }
     const route = location.hash;
     if (route.startsWith("#/quiz") && quiz) {
       if (!quiz.answered && /^[1-4]$/.test(e.key)) { const k = +e.key - 1; if (k < quiz.qs[quiz.i]?.options.length) answer(k); }
@@ -1200,4 +1543,5 @@
   }
   window.addEventListener("hashchange", route);
   route();
+  initAuth();
 })();

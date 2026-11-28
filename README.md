@@ -16,6 +16,16 @@ python3 -m http.server 8000
 
 Then open http://localhost:8000. You can also open `index.html` directly.
 
+## Accounts
+
+Signing in is optional. On a first visit, learners can continue with Apple, continue with Google, or continue without logging in. Sign-in uses [Clerk](https://clerk.com), installed through the Vercel Marketplace, and Clerk's scripts load only when someone signs in.
+
+A signed-in learner's progress (XP, streak, mastered items, best scores, level and My words) is saved to their Clerk account as a compact JSON string in the user's `unsafeMetadata` field `lmm`, so it follows them across devices. Clerk allows 8 KB of metadata per user, which is why My words is capped at 60 words. Signing out clears progress from that browser; it stays in the account.
+
+`api/clerk-config.js` is a small Vercel Function that gives the browser the Clerk publishable key from the `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY` environment variable.
+
+Apple and Google sign-in are switched on in the Clerk dashboard under SSO connections. For the live site they need your own credentials: a Google Cloud OAuth client, and an Apple Developer account for Sign in with Apple.
+
 ## Files
 
 - `index.html`: page shell (title, header, footer)

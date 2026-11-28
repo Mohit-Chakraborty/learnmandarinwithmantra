@@ -478,6 +478,48 @@ body.modal-open { overflow: hidden; }
 .w-msg b { color: var(--jade); }
 .w-ctl { display: flex; gap: 8px; justify-content: center; flex-wrap: wrap; }
 
+/* ---------- Accounts ---------- */
+.acct-btn {
+  font: inherit; font-weight: 700; font-size: 14px; cursor: pointer; white-space: nowrap;
+  height: 44px; padding: 0 16px; border-radius: 999px; border: 1px solid var(--line); background: var(--card); color: var(--ink); box-shadow: var(--shadow);
+}
+.acct-btn:hover { border-color: var(--red); }
+.acct-btn.signed { width: 44px; padding: 0; overflow: hidden; display: grid; place-items: center; background: var(--red); color: #fffaf2; }
+.acct-btn.signed img { width: 100%; height: 100%; object-fit: cover; }
+.acct-menu {
+  position: absolute; right: 20px; top: 66px; z-index: 30; width: min(300px, calc(100vw - 32px));
+  background: var(--card); border: 1px solid var(--line); border-radius: 18px; box-shadow: var(--shadow); padding: 16px; animation: rise .15s ease;
+}
+.acct-who { display: flex; flex-direction: column; }
+.acct-who span { color: var(--muted); font-size: 13px; overflow-wrap: anywhere; }
+.acct-sync { font-size: 13px; color: var(--jade); margin: 10px 0 14px; }
+.acct-menu .btn { width: 100%; }
+.auth-panel { z-index: 70; }
+.auth-card { width: min(420px, 100%); padding: 30px 26px 24px; }
+.auth-seal {
+  font-family: var(--hz); font-weight: 700; color: #fffaf2; background: var(--red); border-radius: 14px; margin: 0 auto 14px;
+  width: 54px; height: 54px; display: grid; place-items: center; font-size: 19px; writing-mode: vertical-rl; transform: rotate(-4deg);
+}
+.auth-card h2 { font-size: 24px; }
+.auth-lede { color: var(--muted); margin: 8px 0 20px; }
+.auth-btns { display: grid; gap: 10px; }
+.auth-btn {
+  font: inherit; font-weight: 700; font-size: 16px; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 10px;
+  height: 50px; border-radius: 999px; border: 1px solid var(--line); transition: transform .1s, opacity .2s;
+}
+.auth-btn:hover:not(:disabled) { transform: translateY(-1px); }
+.auth-btn:disabled { opacity: .6; cursor: default; }
+.auth-btn.busy span::after { content: "…"; }
+.auth-btn.apple { background: #000; color: #fff; border-color: #000; }
+.auth-btn.google { background: #fff; color: #1f1f1f; border-color: #dadce0; }
+.auth-err { color: var(--red); font-size: 14px; min-height: 0; margin: 10px 0 0; }
+.auth-err:empty { display: none; }
+.auth-or { display: flex; align-items: center; gap: 12px; color: var(--muted); font-size: 13px; margin: 18px 0 8px; }
+.auth-or::before, .auth-or::after { content: ""; flex: 1; height: 1px; background: var(--line); }
+.auth-skip { font: inherit; font-weight: 700; font-size: 15px; color: var(--ink); background: none; border: 0; cursor: pointer; padding: 10px; text-decoration: underline; text-underline-offset: 3px; }
+.auth-skip:hover { color: var(--red); }
+.auth-note { color: var(--muted); font-size: 13px; margin: 6px 0 0; }
+
 /* ---------- Footer, toast, confetti ---------- */
 .foot { text-align: center; color: var(--muted); font-size: 13px; padding: 20px 20px 40px; }
 #toast {
@@ -508,6 +550,8 @@ body.modal-open { overflow: hidden; }
   .brand-text b { font-size: 15px; line-height: 1.15; }
   .seal-logo { width: 38px; height: 38px; font-size: 14px; border-radius: 10px; }
   .stat { padding: 4px 9px 4px 4px; gap: 6px; } .stat-ico { width: 28px; height: 28px; }
+  .acct-btn { height: 38px; padding: 0 12px; font-size: 13px; } .acct-btn.signed { width: 38px; padding: 0; }
+  .acct-menu { right: 16px; top: 60px; }
   .stat-lbl, .xpbar { display: none; }
   .hero { grid-template-columns: 1fr; padding: 22px; }
   .hero-art { height: 220px; order: -1; }
@@ -529,6 +573,10 @@ body.modal-open { overflow: hidden; }
   .q-en { font-size: 30px; } .q-num { font-size: 52px; }
   .flip { height: 300px; }
   .card-hz { font-size: 120px; } .card-hz.words { font-size: 72px; } .card-hz.phrases { font-size: 34px; }
+}
+@media (max-width: 440px) {
+  /* Make room for the account button; the streak is also shown under "Your journey". */
+  .stats .stat:first-child { display: none; }
 }
 @media (max-width: 520px) {
   .cats { grid-template-columns: 1fr; }
